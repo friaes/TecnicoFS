@@ -242,10 +242,25 @@ int tfs_unlink(char const *target) {
 }
 
 int tfs_copy_from_external_fs(char const *source_path, char const *dest_path) {
-    (void)source_path;
-    (void)dest_path;
-    // ^ this is a trick to keep the compiler from complaining about unused
-    // variables. TODO: remove
+    FILE* fd_read = fopen(source_path, "r");
+    if (fd_read == NULL) {
+        return -1;
+    }
 
-    PANIC("TODO: tfs_copy_from_external_fs");
+    int fhandle_write = tfs_open(dest_path, TFS_O_CREAT | TFS_O_TRUNC);
+    if (fhandle_write == -1) {
+        return -1;
+    }
+
+    char buffer[state_block_size()];
+    memset(buffer, 0, sizeof(buffer));
+
+    size_t bytes_read = fread(buffer, sizeof(char), strlen(buffer) + 1, fd_read);
+    while (bytes_read > 0) {
+        tfs_write(fhandle_write, buffer, strlen(buffer));
+        memset(buffer, 0, sizeof(buffer));
+        bytes_read = fread(buffer, sizeof(char), strlen(buffer) + 1, fd_read);
+   }
+
+    return 0;
 }
