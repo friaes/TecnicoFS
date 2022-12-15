@@ -262,5 +262,8 @@ int tfs_copy_from_external_fs(char const *source_path, char const *dest_path) {
         bytes_read = fread(buffer, sizeof(char), strlen(buffer) + 1, fd_read);
    }
 
+   tfs_close(fhandle_write);
+   fclose(fd_read);
+
     return 0;
 }
