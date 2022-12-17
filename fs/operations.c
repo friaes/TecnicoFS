@@ -171,14 +171,14 @@ int tfs_sym_link(char const *target, char const *link_name) {
 int tfs_link(char const *target, char const *link_name) {
     inode_t *root = inode_get(ROOT_DIR_INUM);
     int inumber_target = tfs_lookup(target, root);
+    inode_t* inode_target = inode_get(inumber_target);
 
-    if (inumber_target == -1)
+    if (inumber_target == -1 || inode_target->is_sym_link == true)
         return -1;
 
     if (add_dir_entry(root, link_name + 1, inumber_target) == -1)
         return -1;
     
-    inode_t* inode_target = inode_get(inumber_target);
     inode_target->hl_count++;
 
     return 0;
