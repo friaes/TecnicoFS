@@ -92,16 +92,9 @@ int tfs_open(char const *name, tfs_file_mode_t mode) {
                       "tfs_open: directory files must have an inode");
 
         if (inode->is_sym_link == true) {
-            int target_inum;
             char *target_path = data_block_get(inode->i_data_block);
-            // if the "target" of the soft link doesn't exist, deletes the soft link
-            if ((target_inum = tfs_lookup(target_path, root_dir_inode)) == -1) {
-                clear_dir_entry(root_dir_inode, name);
-                inode_delete(inum);
+            if ((inum = tfs_lookup(target_path, root_dir_inode)) == -1)
                 return -1;
-            }
-            // otherwise, opens the "target" instead
-            inum = target_inum;
             inode = inode_get(inum);
         }
 
