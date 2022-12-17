@@ -91,6 +91,12 @@ int tfs_open(char const *name, tfs_file_mode_t mode) {
         ALWAYS_ASSERT(inode != NULL,
                       "tfs_open: directory files must have an inode");
 
+        if (inode->is_sym_link == true) {
+            char *target_path = data_block_get(inode->i_data_block);
+            inum = tfs_lookup(target_path, root_dir_inode);
+            inode = inode_get(inum);
+        }
+
         // Truncate (if requested)
         if (mode & TFS_O_TRUNC) {
             if (inode->i_size > 0) {
@@ -133,12 +139,33 @@ int tfs_open(char const *name, tfs_file_mode_t mode) {
 }
 
 int tfs_sym_link(char const *target, char const *link_name) {
-    (void)target;
-    (void)link_name;
-    // ^ this is a trick to keep the compiler from complaining about unused
-    // variables. TODO: remove
+    inode_t *root = inode_get(ROOT_DIR_INUM);
 
-    PANIC("TODO: tfs_sym_link");
+    // verifies if the target exists
+    int inum_target = tfs_lookup(target, root);
+    if (inum_target == -1)
+        return -1;
+    
+    // creates the soft link if it doesn't exist
+    int fhandle_link = tfs_open(link_name, TFS_O_CREAT);
+    if (fhandle_link == -1)
+        return -1;
+    tfs_close(fhandle_link);
+
+    int inumber_link = tfs_lookup(link_name, root);
+    inode_t *inode_link = inode_get(inumber_link);
+    inode_link->i_data_block = data_block_alloc();
+
+    char *data_block_link = data_block_get(inode_link->i_data_block);
+    size_t path_length = strlen(target);
+    if (path_length >= state_block_size())
+        return -1;
+    for (int i = 0; i < path_length; i++)
+        data_block_link[i] = target[i];
+
+    inode_link->is_sym_link = true;
+
+    return 0;
 }
 
 int tfs_link(char const *target, char const *link_name) {
@@ -184,7 +211,7 @@ ssize_t tfs_write(int fhandle, void const *buffer, size_t to_write) {
         to_write = block_size - file->of_offset;
     }
 
-    if (to_write > 0) {
+    if (to_write > 0 && inode->is_sym_link == false) {
         if (inode->i_size == 0) {
             // If empty file, allocate new block
             int bnum = data_block_alloc();

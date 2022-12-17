@@ -206,6 +206,8 @@ int inode_create(inode_type i_type) {
 
     inode->i_node_type = i_type;
     inode->hl_count = 1;
+    inode->is_sym_link = false;
+    
     switch (i_type) {
     case T_DIRECTORY: {
         // Initializes directory (filling its block with empty entries, labeled
