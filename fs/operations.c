@@ -93,9 +93,10 @@ int tfs_open(char const *name, tfs_file_mode_t mode) {
 
         if (inode->is_sym_link == true) {
             char *target_path = data_block_get(inode->i_data_block);
-            // soft link target file still exists
+            // checks if the soft link's target file still exists
             if ((inum = tfs_lookup(target_path, root_dir_inode)) == -1)
                 return -1;
+            inode = inode_get(inum);
         }
 
         // Truncate (if requested)
@@ -157,7 +158,6 @@ int tfs_sym_link(char const *target, char const *link_name) {
     inode_t *inode_link = inode_get(inumber_link);
     inode_link->i_data_block = data_block_alloc();
 
-
     char *data_block_link = data_block_get(inode_link->i_data_block);
     size_t path_length = strlen(target);
     if (path_length >= state_block_size())
@@ -187,7 +187,7 @@ int tfs_link(char const *target, char const *link_name) {
     if (add_dir_entry(root, link_name + 1, inumber_target) == -1)
         return -1;
     
-    // increases the target(file/directory) hard link counter
+    // increases the target's hard link counter
     inode_target->hl_count++;
 
     return 0;
@@ -287,12 +287,12 @@ int tfs_unlink(char const *target) {
     inode_t* inode_target = inode_get(inumber_target);
 
     inode_target->hl_count -= 1;
-    // deletes target(file/directory) if hard link counter reaches 0
-    if (inode_target->hl_count <= 0) { 
+    // deletes the target's inode if hard link counter reaches 0
+    if (inode_target->hl_count <= 0)
         inode_delete(inumber_target);
-        if (clear_dir_entry(root, target + 1) == -1)
-            return -1;
-    }
+
+    if (clear_dir_entry(root, target + 1) == -1)
+        return -1;
 
     return 0;
 }
@@ -311,14 +311,15 @@ int tfs_copy_from_external_fs(char const *source_path, char const *dest_path) {
     char buffer[state_block_size()];
     memset(buffer, 0, sizeof(buffer));
 
-    size_t bytes_read; 
-    while ((bytes_read = fread(buffer, sizeof(char), strlen(buffer) + 1, fd_read))> 0) {
-        if (tfs_write(fhandle_write, buffer, strlen(buffer)) == -1){
+    size_t bytes_read = fread(buffer, sizeof(char), strlen(buffer) + 1, fd_read);
+    while (bytes_read > 0) {
+        if (tfs_write(fhandle_write, buffer, strlen(buffer)) == -1) {
             tfs_close(fhandle_write);
             fclose(fd_read);
             return -1;
         }    
         memset(buffer, 0, sizeof(buffer));
+        bytes_read = fread(buffer, sizeof(char), strlen(buffer) + 1, fd_read);
     }
 
     if (tfs_close(fhandle_write) == -1 || fclose(fd_read) != 0)
