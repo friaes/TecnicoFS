@@ -110,10 +110,13 @@ int tfs_open(char const *name, tfs_file_mode_t mode) {
 
         // Truncate (if requested)
         if (mode & TFS_O_TRUNC) {
+            pthread_rwlock_rdlock(&inode->rwl);
             if (inode->i_size > 0) {
                 data_block_free(inode->i_data_block);
+                pthread_rwlock_unlock(&inode->rwl);
                 inode->i_size = 0;
             }
+            pthread_rwlock_unlock(&inode->rwl);
         }
         // Determine initial offset
         if (mode & TFS_O_APPEND) {
@@ -247,7 +250,7 @@ ssize_t tfs_write(int fhandle, void const *buffer, size_t to_write) {
     
     if (to_write > 0 && inode->is_sym_link == false) {
         if (inode->i_size == 0) {
-            pthread_rwlock_unlock(&file->rwl);
+            pthread_rwlock_unlock(&inode->rwl);
             // If empty file, allocate new block
             int bnum = data_block_alloc();
             if (bnum == -1) {
@@ -262,10 +265,11 @@ ssize_t tfs_write(int fhandle, void const *buffer, size_t to_write) {
         pthread_rwlock_unlock(&inode->rwl);
         ALWAYS_ASSERT(block != NULL, "tfs_write: data block deleted mid-write");
 
-        pthread_rwlock_rdlock(&file->rwl);
+        if (pthread_mutex_lock(&mutex_ops) != 0)
+            exit(EXIT_FAILURE);
+
         // Perform the actual write
         memcpy(block + file->of_offset, buffer, to_write);
-        pthread_rwlock_unlock(&file->rwl);
 
         pthread_rwlock_rdlock(&file->rwl);
         // The offset associated with the file handle is incremented accordingly
@@ -273,6 +277,8 @@ ssize_t tfs_write(int fhandle, void const *buffer, size_t to_write) {
         if (file->of_offset > inode->i_size) {
             inode->i_size = file->of_offset;
         }
+        if (pthread_mutex_unlock(&mutex_ops) != 0)
+            exit(EXIT_FAILURE);
     }
     pthread_rwlock_unlock(&inode->rwl);
     pthread_rwlock_unlock(&file->rwl);
@@ -341,7 +347,7 @@ int tfs_unlink(char const *target) {
             exit(EXIT_FAILURE);
         return -1;
     }
-    // Unlocks now that the directory entry has been removed
+    // Unlocks now that the directory
     if (pthread_mutex_unlock(&mutex_ops) != 0)
         exit(EXIT_FAILURE);
 
@@ -362,8 +368,6 @@ int tfs_copy_from_external_fs(char const *source_path, char const *dest_path) {
     char buffer[state_block_size()];
     memset(buffer, 0, sizeof(buffer));
 
-    if (pthread_mutex_lock(&mutex_ops) != 0)
-        exit(EXIT_FAILURE);
     // Reads from the outside file and writes into the file inside TFS
     size_t bytes_read = fread(buffer, sizeof(char), strlen(buffer) + 1, fd_read);
     while (bytes_read > 0) {
@@ -375,8 +379,6 @@ int tfs_copy_from_external_fs(char const *source_path, char const *dest_path) {
         memset(buffer, 0, sizeof(buffer));
         bytes_read = fread(buffer, sizeof(char), strlen(buffer) + 1, fd_read);
     }
-    if (pthread_mutex_unlock(&mutex_ops) != 0)
-        exit(EXIT_FAILURE);
 
     if (tfs_close(fhandle_write) == -1 || fclose(fd_read) != 0)
         return -1;
