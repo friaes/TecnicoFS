@@ -22,7 +22,7 @@ TARGET_EXECS := $(patsubst %.c,%,$(wildcard tests/*.c))
 vpath # clears VPATH
 vpath %.h $(INCLUDE_DIRS)
 
-CFLAGS += -pthread -std=c17 -D_POSIX_C_SOURCE=200809L
+CFLAGS += -std=c17 -D_POSIX_C_SOURCE=200809L
 CFLAGS += $(INCLUDES)
 
 # Warnings
@@ -45,6 +45,9 @@ endif
 # convenience variables for extending compiler options (e.g. to add sanitizers)
 CFLAGS += $(EXTRA_CFLAGS)
 LDFLAGS += $(EXTRA_LDFLAGS)
+
+EXTRA_CFLAGS += -fsanitize=thread
+EXTRA_LDFLAGS += -pthread
 
 # A phony target is one that is not really the name of a file
 # https://www.gnu.org/software/make/manual/html_node/Phony-Targets.html
