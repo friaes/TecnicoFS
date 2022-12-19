@@ -86,7 +86,7 @@ int tfs_open(char const *name, tfs_file_mode_t mode) {
     ALWAYS_ASSERT(root_dir_inode != NULL,
                   "tfs_open: root dir inode must exist");
 
-    // locking until we're sure the file exists
+    // Locking until we're sure the file exists
     if (pthread_mutex_lock(&mutex_ops) != 0)
         exit(EXIT_FAILURE);
     int inum = tfs_lookup(name, root_dir_inode);
@@ -102,7 +102,7 @@ int tfs_open(char const *name, tfs_file_mode_t mode) {
 
         if (inode->is_sym_link == true) {
             char *target_path = data_block_get(inode->i_data_block);
-            // checks if the soft link's target file still exists
+            // Checks if the soft link's target file still exists
             if ((inum = tfs_lookup(target_path, root_dir_inode)) == -1)
                 return -1;
             inode = inode_get(inum);
