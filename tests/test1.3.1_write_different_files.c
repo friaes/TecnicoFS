@@ -11,12 +11,12 @@
 
 uint8_t const file_contents[] = "ABC";
 
-char *tfs_files[] = {"/f1", "/f2", "/f3"};
+const char *tfs_files[] = {"/f1", "/f2", "/f3"};
 
 void *write_contents(void *input) {
 
     int file_id = *((int *)input);
-    char *path = tfs_files[file_id];
+    const char *path = tfs_files[file_id];
 
     int f = tfs_open(path, TFS_O_CREAT);
     assert(f != -1);
@@ -30,7 +30,7 @@ void *write_contents(void *input) {
     return NULL;
 }
 
-void assert_contents_ok(char *tfs_file) {
+void assert_contents_ok(const char *tfs_file) {
     int f = tfs_open(tfs_file, 0);
     assert(f != -1);
 
