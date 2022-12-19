@@ -103,8 +103,10 @@ int state_init(tfs_params params) {
         return -1; // already initialized
     }
 
-    pthread_rwlock_init(&free_blocks_rwl, NULL);
-    pthread_rwlock_init(&freeinode_ts_rwl, NULL);
+    if (pthread_rwlock_init(&free_blocks_rwl, NULL))
+        exit(EXIT_FAILURE);
+    if (pthread_rwlock_init(&freeinode_ts_rwl, NULL))
+        exit(EXIT_FAILURE);
 
     inode_table = malloc(INODE_TABLE_SIZE * sizeof(inode_t));
     freeinode_ts = malloc(INODE_TABLE_SIZE * sizeof(allocation_state_t));
@@ -128,6 +130,8 @@ int state_init(tfs_params params) {
     }
 
     for (size_t i = 0; i < MAX_OPEN_FILES; i++) {
+        if (pthread_mutex_init(&open_file_table[i].of_mutex, NULL) != 0)
+            exit(EXIT_FAILURE);
         free_open_file_entries[i] = FREE;
     }
 
@@ -223,6 +227,8 @@ int inode_create(inode_type i_type) {
     inode->i_node_type = i_type;
     inode->hl_count = 1;
     inode->is_sym_link = false;
+    if (pthread_rwlock_init(&inode->rwl, NULL) != 0)
+        exit(EXIT_FAILURE);
     
     switch (i_type) {
     case T_DIRECTORY: {
@@ -366,13 +372,23 @@ int add_dir_entry(inode_t *inode, char const *sub_name, int sub_inumber) {
 
     // Finds and fills the first empty entry
     for (size_t i = 0; i < MAX_DIR_ENTRIES; i++) {
+        // Locking to make sure a second thread can't get through before the
+        // first thread updates the d_inumber
+        if (pthread_mutex_lock(&mutex_state) != 0)
+            exit(EXIT_FAILURE);
         if (dir_entry[i].d_inumber == -1) {  
             dir_entry[i].d_inumber = sub_inumber;
+            // We can unlock now
+            if (pthread_mutex_unlock(&mutex_state) != 0)
+                exit(EXIT_FAILURE);
+
             strncpy(dir_entry[i].d_name, sub_name, MAX_FILE_NAME - 1);
             dir_entry[i].d_name[MAX_FILE_NAME - 1] = '\0';
 
             return 0;
         }
+        if (pthread_mutex_unlock(&mutex_state) != 0)
+            exit(EXIT_FAILURE);
     }
 
     return -1; // no space for entry

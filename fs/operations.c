@@ -233,6 +233,9 @@ ssize_t tfs_write(int fhandle, void const *buffer, size_t to_write) {
     if (file == NULL) {
         return -1;
     }
+    // Locking this file until the contents have been written
+    if (pthread_mutex_lock(&file->of_mutex) != 0)
+        exit(EXIT_FAILURE);
 
     //  From the open file table entry, we get the inode
     inode_t *inode = inode_get(file->of_inumber);
@@ -241,47 +244,48 @@ ssize_t tfs_write(int fhandle, void const *buffer, size_t to_write) {
     // Determine how many bytes to write
     size_t block_size = state_block_size();
 
-    pthread_rwlock_rdlock(&file->rwl);
     if (to_write + file->of_offset > block_size) {
         to_write = block_size - file->of_offset;
     }
-    pthread_rwlock_unlock(&file->rwl);
+
     pthread_rwlock_rdlock(&inode->rwl);
-    
     if (to_write > 0 && inode->is_sym_link == false) {
         if (inode->i_size == 0) {
             pthread_rwlock_unlock(&inode->rwl);
             // If empty file, allocate new block
             int bnum = data_block_alloc();
             if (bnum == -1) {
+                if (pthread_mutex_unlock(&file->of_mutex) != 0)
+                    exit(EXIT_FAILURE);
                 return -1; // no space
             }
-            
+
+            // The next line should be locked, but locking this makes the
+            // program get stuck and I don't know why
             inode->i_data_block = bnum;
         }
+        pthread_rwlock_unlock(&inode->rwl);
 
         pthread_rwlock_rdlock(&inode->rwl);
         void *block = data_block_get(inode->i_data_block);
         pthread_rwlock_unlock(&inode->rwl);
         ALWAYS_ASSERT(block != NULL, "tfs_write: data block deleted mid-write");
 
-        if (pthread_mutex_lock(&mutex_ops) != 0)
-            exit(EXIT_FAILURE);
-
         // Perform the actual write
         memcpy(block + file->of_offset, buffer, to_write);
 
-        pthread_rwlock_rdlock(&file->rwl);
         // The offset associated with the file handle is incremented accordingly
         file->of_offset += to_write;
         if (file->of_offset > inode->i_size) {
+            // The next line should be locked, but locking this makes the
+            // program get stuck and I don't know why
             inode->i_size = file->of_offset;
         }
-        if (pthread_mutex_unlock(&mutex_ops) != 0)
-            exit(EXIT_FAILURE);
     }
     pthread_rwlock_unlock(&inode->rwl);
-    pthread_rwlock_unlock(&file->rwl);
+
+    if (pthread_mutex_unlock(&file->of_mutex) != 0)
+        exit(EXIT_FAILURE);
 
     return (ssize_t)to_write;
 }
@@ -291,30 +295,31 @@ ssize_t tfs_read(int fhandle, void *buffer, size_t len) {
     if (file == NULL) {
         return -1;
     }
+    // Locking this file until the contents have been read
+    if (pthread_mutex_lock(&file->of_mutex) != 0)
+        exit(EXIT_FAILURE);
 
     // From the open file table entry, we get the inode
     inode_t const *inode = inode_get(file->of_inumber);
     ALWAYS_ASSERT(inode != NULL, "tfs_read: inode of open file deleted");
 
-    pthread_rwlock_rdlock(&file->rwl);
     // Determine how many bytes to read
     size_t to_read = inode->i_size - file->of_offset;
     if (to_read > len) {
         to_read = len;
     }
-    pthread_rwlock_unlock(&file->rwl);
 
     if (to_read > 0) {
         void *block = data_block_get(inode->i_data_block);
         ALWAYS_ASSERT(block != NULL, "tfs_read: data block deleted mid-read");
 
-        pthread_rwlock_rdlock(&file->rwl);
         // Perform the actual read
         memcpy(buffer, block + file->of_offset, to_read);
         // The offset associated with the file handle is incremented accordingly
         file->of_offset += to_read;
     }
-    pthread_rwlock_unlock(&file->rwl);
+    if (pthread_mutex_unlock(&file->of_mutex) != 0)
+        exit(EXIT_FAILURE);
 
     return (ssize_t)to_read;
 }
